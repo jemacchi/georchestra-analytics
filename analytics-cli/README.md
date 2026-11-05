@@ -55,6 +55,10 @@ analytics-cli --config-file /path/to/config.yaml db upgrade
 
 This creates the schema, tables, and all TimescaleDB objects in one step.
 
+The `0001` core baseline contains the OGC aggregates deployed by the Helm chart.
+The optional Data API aggregates are intentionally excluded because they require
+Timescale Toolkit, which is not bundled in that TimescaleDB image.
+
 > **Note:** On a plain PostgreSQL instance (no TimescaleDB extension), the initial revision will fail at the `create_hypertable` call. Either use the TimescaleDB Docker image, or stamp at `0001` after manually creating the schema and run only subsequent revisions.
 
 ### Applying future migrations

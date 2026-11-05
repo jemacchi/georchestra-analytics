@@ -199,6 +199,9 @@ def _get_alembic_config() -> AlembicConfig:
     pkg_root = pathlib.Path(georchestra_analytics_cli.__file__).parent
     alembic_cfg = AlembicConfig(str(pkg_root / "alembic.ini"))
     alembic_cfg.set_main_option("script_location", str(pkg_root / "alembic"))
+    # The top-level Click callback already loaded --config-file. Pass that exact
+    # object to env.py instead of making Alembic silently reload only the env var.
+    alembic_cfg.attributes["app_config"] = conf
     return alembic_cfg
 
 

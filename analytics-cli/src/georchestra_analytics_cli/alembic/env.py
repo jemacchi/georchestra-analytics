@@ -17,8 +17,10 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    config_file = os.environ.get("GEORCHESTRA_ANALYTICS_CLI_CONFIG_FILE")
-    app_config = load_config_from(config_file)
+    app_config = alembic_config.attributes.get("app_config")
+    if app_config is None:
+        config_file = os.environ.get("GEORCHESTRA_ANALYTICS_CLI_CONFIG_FILE")
+        app_config = load_config_from(config_file)
     # render_as_string(hide_password=False) is required: SQLAlchemy's URL.__str__()
     # deliberately redacts the password to "***", which makes psycopg2 fail auth.
     return app_config.get_db_connection_string().render_as_string(hide_password=False)

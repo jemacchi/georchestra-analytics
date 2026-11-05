@@ -1,5 +1,6 @@
 from unittest.mock import Mock
 
+from alembic.config import Config as AlembicConfig
 from click.testing import CliRunner
 
 from georchestra_analytics_cli import __main__ as main
@@ -16,6 +17,16 @@ def _runner(monkeypatch):
     monkeypatch.setattr(main, "load_config_from", Mock(return_value=config))
     monkeypatch.setattr(main, "_get_alembic_config", Mock(return_value=alembic_config))
     return CliRunner(), alembic_config
+
+
+def test_alembic_config_receives_loaded_cli_config(monkeypatch):
+    config = _Config()
+    monkeypatch.setattr(main, "conf", config)
+
+    alembic_config = main._get_alembic_config()
+
+    assert isinstance(alembic_config, AlembicConfig)
+    assert alembic_config.attributes["app_config"] is config
 
 
 def test_db_upgrade_defaults_to_head(monkeypatch):

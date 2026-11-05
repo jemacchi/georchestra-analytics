@@ -4,8 +4,13 @@ Revision ID: 0001
 Revises:
 Create Date: 2026-05-12
 
-This revision captures the full schema as it existed at v2.0.0 — the baseline for all
-future Alembic-managed migrations.
+This revision captures the core OGC schema as it existed at v2.0.0 — the baseline for
+all future Alembic-managed migrations.
+
+The optional Data API aggregates are not part of this core baseline: they require
+Timescale Toolkit, which is not included in the TimescaleDB image used by the Helm
+deployment. They must be introduced by a separate migration once that dependency is
+packaged and supported.
 
 For existing deployments (schema already created by Docker entrypoint SQL files), run:
     analytics-cli db stamp --revision 0001
@@ -148,6 +153,7 @@ def upgrade() -> None:
             request_details ->> 'workspaces', request_details ->> 'layers', request_details ->> 'service',
             request_details ->> 'request' , request_details ->> 'tiled', request_details ->> 'is_download',
             request_details ->> 'download_format', request_details ->> 'user_agent_family', request_details ->> 'referrer'
+        WITH NO DATA
     """)
 
     op.execute(
@@ -192,6 +198,7 @@ def upgrade() -> None:
         FROM analytics.ogc_summary_hourly
         GROUP BY bucket_daily, app_id, app_name, user_name, org_name, request_method, status_code, server_address, workspaces,
              layers, service, request, tiled, is_download, download_format, user_agent_family, referrer
+        WITH NO DATA
     """)
 
     op.execute(
@@ -236,6 +243,7 @@ def upgrade() -> None:
         FROM analytics.ogc_summary_daily
         GROUP BY bucket_monthly, app_id, app_name, user_name, org_name, request_method, status_code, server_address, workspaces,
              layers, service, request, tiled, is_download, download_format, user_agent_family, referrer
+        WITH NO DATA
     """)
 
     op.execute("""
@@ -245,10 +253,6 @@ def upgrade() -> None:
           end_offset => INTERVAL '0 hours',
           schedule_interval => INTERVAL '1 month')
     """)
-
-    op.execute("CALL refresh_continuous_aggregate('analytics.ogc_summary_hourly', '2021-05-01', '2026-05-14')")
-    op.execute("CALL refresh_continuous_aggregate('analytics.ogc_summary_daily', '2021-05-01', '2026-05-14')")
-    op.execute("CALL refresh_continuous_aggregate('analytics.ogc_summary_monthly', '2021-05-01', '2026-05-14')")
 
     op.execute("""
         CREATE VIEW analytics.ogc_summary AS
@@ -325,139 +329,13 @@ def upgrade() -> None:
                  FROM analytics.ogc_summary_monthly
     """)
 
-    # DataAPI continuous aggregates (from 102_analytics_datapi_views.sql)
-    op.execute("""
-        CREATE MATERIALIZED VIEW analytics.dataapi_summary_hourly
-        WITH (timescaledb.continuous) AS
-        SELECT time_bucket(INTERVAL '1 h', ts, 'Europe/Paris') AS bucket_hourly,
-            user_name,
-            org_name,
-            request_method,
-            status_code,
-            request_details ->> 'layers' AS layers,
-            request_details ->> 'request'            AS request,
-            request_details ->> 'is_download'       AS is_download,
-            request_details ->> 'download_format'   AS download_format,
-            request_details ->> 'full_download'     AS full_download,
-            request_details ->> 'user_agent_family' AS user_agent_family,
-            count(id)                               AS nb_req,
-            AVG(response_time)                      AS avg_time,
-            percentile_agg(response_time::DOUBLE PRECISION) AS percentile_hourly
-        FROM analytics.access_logs
-        WHERE app_name = 'dataapi'
-        GROUP BY bucket_hourly, user_name, org_name, request_method, status_code, request_details ->> 'layers',
-            request_details ->> 'request' , request_details ->> 'is_download', request_details ->> 'download_format',
-            request_details ->> 'full_download', request_details ->> 'user_agent_family'
-    """)
-
-    op.execute(
-        "SELECT add_retention_policy('analytics.dataapi_summary_hourly', "
-        "drop_after => INTERVAL '3 weeks', schedule_interval => INTERVAL '1 day')"
-    )
-    op.execute("""
-        SELECT add_continuous_aggregate_policy('analytics.dataapi_summary_hourly',
-          initial_start => '2025-11-11 00:00:05',
-          start_offset => INTERVAL '7 days',
-          end_offset => INTERVAL '0 hours',
-          schedule_interval => INTERVAL '1 hour')
-    """)
-    op.execute(
-        "ALTER MATERIALIZED VIEW analytics.dataapi_summary_hourly set (timescaledb.compress = true)"
-    )
-    op.execute(
-        "SELECT add_compression_policy('analytics.dataapi_summary_hourly', compress_after=>'4 days'::interval)"
-    )
-
-    op.execute("""
-        CREATE MATERIALIZED VIEW analytics.dataapi_summary_daily
-        WITH (timescaledb.continuous) AS
-        SELECT  time_bucket(INTERVAL '1 d', bucket_hourly, 'Europe/Paris') AS bucket_daily,
-                user_name,
-                org_name,
-                request_method,
-                status_code,
-                layers,
-                request,
-                is_download,
-                download_format,
-                full_download,
-                user_agent_family,
-                SUM(nb_req)                               AS nb_req,
-                mean(rollup(percentile_hourly))   AS avg_time,
-                rollup(percentile_hourly) as percentile_daily
-        FROM analytics.dataapi_summary_hourly
-        GROUP BY bucket_daily, user_name, org_name, request_method, status_code, layers, request, is_download,
-                 download_format, full_download, user_agent_family
-    """)
-
-    op.execute(
-        "SELECT add_retention_policy('analytics.dataapi_summary_daily', "
-        "drop_after => INTERVAL '2 years', schedule_interval => INTERVAL '1 week')"
-    )
-    op.execute("""
-        SELECT add_continuous_aggregate_policy('analytics.dataapi_summary_daily',
-          initial_start => '2025-11-11 00:00:05',
-          start_offset => INTERVAL '3 weeks',
-          end_offset => INTERVAL '0 hours',
-          schedule_interval => INTERVAL '1 d')
-    """)
-    op.execute(
-        "ALTER MATERIALIZED VIEW analytics.dataapi_summary_daily set (timescaledb.compress = true)"
-    )
-    op.execute(
-        "SELECT add_compression_policy('analytics.dataapi_summary_daily', compress_after=>'4 weeks'::interval)"
-    )
-
-    op.execute("""
-        CREATE MATERIALIZED VIEW analytics.dataapi_summary_monthly
-        WITH (timescaledb.continuous) AS
-        SELECT  time_bucket(INTERVAL '1 month', bucket_daily, 'Europe/Paris') AS bucket_monthly,
-                user_name,
-                org_name,
-                request_method,
-                status_code,
-                layers,
-                request,
-                is_download,
-                download_format,
-                full_download,
-                user_agent_family,
-                SUM(nb_req)                               AS nb_req,
-                mean(rollup(percentile_daily))   AS avg_time,
-                rollup(percentile_daily) as percentile_monthly
-        FROM analytics.dataapi_summary_daily
-        GROUP BY bucket_monthly, user_name, org_name, request_method, status_code, layers, request, is_download,
-                 download_format, full_download, user_agent_family
-    """)
-
-    op.execute("""
-        SELECT add_continuous_aggregate_policy('analytics.dataapi_summary_monthly',
-          initial_start => '2025-11-11 00:00:05',
-          start_offset => INTERVAL '6 months',
-          end_offset => INTERVAL '0 hours',
-          schedule_interval => INTERVAL '1 month')
-    """)
-    op.execute(
-        "ALTER MATERIALIZED VIEW analytics.dataapi_summary_monthly set (timescaledb.compress = true)"
-    )
-    op.execute(
-        "SELECT add_compression_policy('analytics.dataapi_summary_monthly', compress_after=>'7 months'::interval)"
-    )
-
-    op.execute("CALL refresh_continuous_aggregate('analytics.dataapi_summary_hourly', '2021-05-01', '2025-05-14')")
-    op.execute("CALL refresh_continuous_aggregate('analytics.dataapi_summary_daily', '2021-05-01', '2025-05-14')")
-    op.execute("CALL refresh_continuous_aggregate('analytics.dataapi_summary_monthly', '2021-05-01', '2025-05-14')")
-
-
 def downgrade() -> None:
     # Drop in reverse dependency order
     op.execute("DROP VIEW IF EXISTS analytics.ogc_summary")
-    op.execute("DROP MATERIALIZED VIEW IF EXISTS analytics.dataapi_summary_monthly CASCADE")
-    op.execute("DROP MATERIALIZED VIEW IF EXISTS analytics.dataapi_summary_daily CASCADE")
-    op.execute("DROP MATERIALIZED VIEW IF EXISTS analytics.dataapi_summary_hourly CASCADE")
     op.execute("DROP MATERIALIZED VIEW IF EXISTS analytics.ogc_summary_monthly CASCADE")
     op.execute("DROP MATERIALIZED VIEW IF EXISTS analytics.ogc_summary_daily CASCADE")
     op.execute("DROP MATERIALIZED VIEW IF EXISTS analytics.ogc_summary_hourly CASCADE")
     op.execute("DROP TABLE IF EXISTS analytics.access_logs CASCADE")
     op.execute("DROP TABLE IF EXISTS analytics.opentelemetry_buffer")
-    op.execute("DROP SCHEMA IF EXISTS analytics CASCADE")
+    # Keep the schema because it contains Alembic's own version table. Alembic
+    # removes the 0001 row after this function returns.
