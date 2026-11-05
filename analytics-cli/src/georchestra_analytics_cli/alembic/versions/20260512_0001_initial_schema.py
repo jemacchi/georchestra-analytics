@@ -8,7 +8,7 @@ This revision captures the full schema as it existed at v2.0.0 — the baseline 
 future Alembic-managed migrations.
 
 For existing deployments (schema already created by Docker entrypoint SQL files), run:
-    analytics-cli db stamp head
+    analytics-cli db stamp --revision 0001
 This writes the alembic_version row without re-executing any DDL.
 
 For fresh deployments, run:

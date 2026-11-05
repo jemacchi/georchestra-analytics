@@ -222,9 +222,14 @@ def current():
 
 
 @db.command()
-@click.option("--revision", default="head", show_default=True, help="Target revision.")
+@click.option(
+    "--revision",
+    default="0001",
+    show_default=True,
+    help="Revision to record without running migrations.",
+)
 def stamp(revision):
-    """Mark the DB as at revision without running migrations (use for existing installs)."""
+    """Record a revision without running migrations (existing installs only)."""
     alembic_command.stamp(_get_alembic_config(), revision)
 
 

@@ -27,10 +27,12 @@ Schema migrations are managed with [Alembic](https://alembic.sqlalchemy.org/) vi
 
 ### Existing production database
 
-The schema was previously created by the Docker entrypoint SQL files. Tell Alembic to treat the current state as already applied — without running any DDL:
+The schema was previously created by the Docker entrypoint SQL files. After verifying
+that it matches the `0001` baseline, tell Alembic to treat that revision as already
+applied, without running any DDL:
 
 ```bash
-analytics-cli --config-file /path/to/config.yaml db stamp head
+analytics-cli --config-file /path/to/config.yaml db stamp --revision 0001
 ```
 
 Verify:
@@ -39,7 +41,9 @@ analytics-cli --config-file /path/to/config.yaml db current
 # → Rev: 0001 (head)
 ```
 
-From this point on, use `db upgrade` whenever a new release includes migrations.
+Never use `stamp head` for this adoption step: once later revisions exist, that would
+mark unapplied schema and data migrations as completed. From this point on, use
+`db upgrade` whenever a new release includes migrations.
 
 ### Local development (fresh database)
 
@@ -70,7 +74,8 @@ analytics-cli --config-file /path/to/config.yaml db upgrade
 | `db upgrade --revision <rev>` | Apply migrations up to a specific revision |
 | `db downgrade` | Roll back one migration |
 | `db downgrade --revision <rev>` | Roll back to a specific revision |
-| `db stamp --revision <rev>` | Mark the database as being at a revision without running DDL |
+| `db stamp` | Mark an existing database at baseline revision `0001` without running DDL |
+| `db stamp --revision <rev>` | Mark the database at an explicit revision without running DDL |
 
 The `--config-file` option (or `GEORCHESTRA_ANALYTICS_CLI_CONFIG_FILE` env var) is required whenever the default config doesn't match your database connection.
 
@@ -78,34 +83,17 @@ The `--config-file` option (or `GEORCHESTRA_ANALYTICS_CLI_CONFIG_FILE` env var) 
 
 New revision files go in `src/georchestra_analytics_cli/alembic/versions/`. Use `op.execute()` for all DDL — TimescaleDB-specific operations (hypertables, continuous aggregates, retention/compression policies) have no SQLAlchemy ORM equivalent and must remain raw SQL.
 
-#### Changing OGC view definitions
+#### Changing OGC aggregate definitions
 
-Dropping and recreating a continuous aggregate view while its retention policy is active risks data loss: the background job may prune freshly-refreshed buckets before the daily/monthly aggregates can roll them up. Always use the `safe_recreate` helper from `alembic/sql/ogc_views.py`:
-
-```python
-from georchestra_analytics_cli.alembic.sql import ogc_views
-
-MY_NEW_OGC_HOURLY = """
-    CREATE MATERIALIZED VIEW analytics.ogc_summary_hourly
-    WITH (timescaledb.continuous) AS
-    SELECT ...
-"""
-
-def upgrade() -> None:
-    # Removes retention policies, drops all OGC views, recreates with new definitions,
-    # refreshes bottom-up (hourly → daily → monthly), then restores all policies.
-    ogc_views.safe_recreate(op, hourly_sql=MY_NEW_OGC_HOURLY)
-
-def downgrade() -> None:
-    ogc_views.safe_recreate(op)  # restores original definitions
-```
-
-The helper also exposes `ogc_views.create(op)` and `ogc_views.drop(op)` for use in initial migrations.
+Do not drop and recreate an existing OGC continuous aggregate. Retention may already
+have removed source rows from `access_logs`, so the historical aggregate can contain
+data that cannot be rebuilt. Disabling retention while recreating the aggregate does
+not recover those deleted source rows.
 
 | Scenario | What to do |
 |----------|------------|
 | New column on `access_logs` not used by OGC views | Nothing — views stay valid |
-| OGC view query changes (new field, filter, bucketing) | `ogc_views.safe_recreate(op, ...)` |
+| OGC aggregate query changes | Create persistent replacement tables and migrate/validate the existing aggregate data before cutover |
 | Only policy changes (retention interval, schedule) | `remove_*_policy` + `add_*_policy`, no drop |
 
 ## Build & publish
