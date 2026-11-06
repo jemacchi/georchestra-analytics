@@ -64,6 +64,29 @@ continuous aggregates. It deliberately leaves the continuous aggregates and thei
 policies unchanged; application dual-write and query cutover are separate release
 steps.
 
+The CLI dual-run implementation queues affected hourly buckets in the same
+transaction that writes `access_logs`. `buffer2db` then drains the queue and
+recomputes the persistent hourly, local-calendar daily, and local-calendar monthly
+stores. A failed buffer batch is rolled back as a unit, so its source rows remain in
+`opentelemetry_buffer` for retry.
+
+The queue can also be drained independently, which is useful for recovery or a
+separate scheduled job:
+
+```bash
+analytics-cli --config-file /path/to/config.yaml aggregate-ogc
+analytics-cli --config-file /path/to/config.yaml aggregate-ogc --batch-size 100
+```
+
+`file2db` and `fake2db` enqueue affected buckets through the same transactional
+write path. Their queue is processed by the next `buffer2db` or `aggregate-ogc` run.
+The per-transaction limit defaults to:
+
+```yaml
+performance:
+  ogc_aggregation_batch_size: 100
+```
+
 > **Note:** On a plain PostgreSQL instance (no TimescaleDB extension), the initial revision will fail at the `create_hypertable` call. Either use the TimescaleDB Docker image, or stamp at `0001` after manually creating the schema and run only subsequent revisions.
 
 ### Applying future migrations

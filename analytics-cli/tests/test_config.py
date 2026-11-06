@@ -82,3 +82,8 @@ def test_config_timescaledb_policy_overrides():
     assert conf.get_timescaledb_chunk_interval() == "1 day"
     assert conf.get_timescaledb_retention_drop_after() == "90 days"
     assert conf.get_timescaledb_retention_schedule_interval() == "12 hours"
+
+
+def test_config_ogc_aggregation_batch_size():
+    conf = load_config_from(config_file)
+    assert conf.get_ogc_aggregation_batch_size() == 100

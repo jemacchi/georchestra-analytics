@@ -111,3 +111,15 @@ def test_db_sync_policies(monkeypatch):
     sync.assert_called_once_with(main.conf)
     assert "chunk_interval=7 days, retention=unchanged" in result.output
 
+
+def test_aggregate_ogc_drains_queue(monkeypatch):
+    runner, _ = _runner(monkeypatch)
+    drain = Mock(return_value=4)
+    monkeypatch.setattr(main, "_drain_ogc_queue", drain)
+
+    result = runner.invoke(main.cli, ["aggregate-ogc", "--batch-size", "2"])
+
+    assert result.exit_code == 0, result.output
+    drain.assert_called_once_with(batch_size=2)
+    assert "processed_buckets=4" in result.output
+

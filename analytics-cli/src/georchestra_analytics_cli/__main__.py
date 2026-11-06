@@ -19,8 +19,12 @@ import georchestra_analytics_cli
 from georchestra_analytics_cli import __version__, dist_name
 from georchestra_analytics_cli.access_logs.AccessLogProcessor import AccessLogProcessor
 from georchestra_analytics_cli.config import Config, load_config_from
+from georchestra_analytics_cli.ogc_aggregation import aggregate_queued_ogc_buckets
 from georchestra_analytics_cli.timescaledb import sync_timescaledb_policies
-from georchestra_analytics_cli.utils import write_prometheus_metrics, _seconds_until_next_cron_run
+from georchestra_analytics_cli.utils import (
+    write_prometheus_metrics,
+    _seconds_until_next_cron_run,
+)
 
 module_logger = logging.getLogger(__name__)
 
@@ -40,6 +44,7 @@ g = Gauge(
     registry=registry,
     labelnames=["command"],
 )
+
 
 @click.group(invoke_without_command=True, no_args_is_help=True)
 @click.option("--version", default=False, is_flag=True)
@@ -83,6 +88,7 @@ def buffer2db(cron: str | None):
             with s.labels(command="buffer2db").time():
                 log_processor = AccessLogProcessor()
                 log_processor.process_buffer_table()
+                _drain_ogc_queue()
 
                 g.labels(command="buffer2db").set_to_current_time()
 
@@ -194,6 +200,28 @@ def fake2db(start: str = None, stop: str = None, last_n_hours: int = 1, rate: in
             conf.get_metrics_metrics_file_path(),
             conf.get_metrics_pushgateway_url(),
         )
+
+
+def _drain_ogc_queue(batch_size: int | None = None) -> int:
+    processed = 0
+    while True:
+        result = aggregate_queued_ogc_buckets(conf, batch_size=batch_size)
+        processed += result.processed_buckets
+        if result.processed_buckets == 0:
+            return processed
+
+
+@cli.command("aggregate-ogc")
+@click.option(
+    "--batch-size",
+    type=click.IntRange(min=1),
+    default=None,
+    help="Maximum queued hourly buckets per transaction.",
+)
+def aggregate_ogc(batch_size: int | None):
+    """Drain the durable OGC aggregation queue."""
+    processed = _drain_ogc_queue(batch_size=batch_size)
+    click.echo(f"OGC aggregation complete: processed_buckets={processed}")
 
 
 def _get_alembic_config() -> AlembicConfig:
