@@ -4,6 +4,7 @@ from alembic.config import Config as AlembicConfig
 from click.testing import CliRunner
 
 from georchestra_analytics_cli import __main__ as main
+from georchestra_analytics_cli.timescaledb import PolicySyncResult
 
 
 class _Config:
@@ -93,4 +94,20 @@ def test_db_downgrade_defaults_to_previous_revision(monkeypatch):
 
     assert result.exit_code == 0, result.output
     downgrade.assert_called_once_with(config, "-1")
+
+
+def test_db_sync_policies(monkeypatch):
+    runner, _ = _runner(monkeypatch)
+    sync = Mock(
+        return_value=PolicySyncResult(
+            chunk_interval="7 days", retention_action="unchanged"
+        )
+    )
+    monkeypatch.setattr(main, "sync_timescaledb_policies", sync)
+
+    result = runner.invoke(main.cli, ["db", "sync-policies"])
+
+    assert result.exit_code == 0, result.output
+    sync.assert_called_once_with(main.conf)
+    assert "chunk_interval=7 days, retention=unchanged" in result.output
 

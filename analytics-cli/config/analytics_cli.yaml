@@ -29,6 +29,12 @@ database:
 #  schema: analytics
   username: "tsdb"
   password: !ENV "${GOA_DB_PASSWORD:secret}"
+  timescaledb:
+    # Applied to analytics.access_logs by `analytics-cli db sync-policies`.
+    chunk_interval: "7 days"
+    retention:
+      drop_after: "3 years"
+      schedule_interval: "1 week"
 
 parsers:
   opentelemetry:

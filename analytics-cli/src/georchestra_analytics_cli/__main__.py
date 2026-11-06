@@ -19,6 +19,7 @@ import georchestra_analytics_cli
 from georchestra_analytics_cli import __version__, dist_name
 from georchestra_analytics_cli.access_logs.AccessLogProcessor import AccessLogProcessor
 from georchestra_analytics_cli.config import Config, load_config_from
+from georchestra_analytics_cli.timescaledb import sync_timescaledb_policies
 from georchestra_analytics_cli.utils import write_prometheus_metrics, _seconds_until_next_cron_run
 
 module_logger = logging.getLogger(__name__)
@@ -234,6 +235,16 @@ def current():
 def stamp(revision):
     """Record a revision without running migrations (existing installs only)."""
     alembic_command.stamp(_get_alembic_config(), revision)
+
+
+@db.command("sync-policies")
+def sync_policies():
+    """Apply configured TimescaleDB policies to analytics.access_logs."""
+    result = sync_timescaledb_policies(conf)
+    click.echo(
+        f"TimescaleDB policies synchronized: chunk_interval={result.chunk_interval}, "
+        f"retention={result.retention_action}"
+    )
 
 
 @db.command()

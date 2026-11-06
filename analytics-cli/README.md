@@ -72,7 +72,26 @@ After upgrading to a new version:
 
 ```bash
 analytics-cli --config-file /path/to/config.yaml db upgrade
+analytics-cli --config-file /path/to/config.yaml db sync-policies
 ```
+
+The second command reconciles the operational TimescaleDB settings for
+`analytics.access_logs`. These settings are configurable independently from the
+immutable Alembic baseline:
+
+```yaml
+database:
+  timescaledb:
+    chunk_interval: "7 days"
+    retention:
+      drop_after: "3 years"
+      schedule_interval: "1 week"
+```
+
+`chunk_interval` applies to chunks created after synchronization; it does not resize
+existing chunks. Running `db sync-policies` repeatedly is safe. The retention job is
+left untouched when its intervals already match the configuration, and is replaced
+transactionally when either interval changes.
 
 ### Reference
 
@@ -85,6 +104,7 @@ analytics-cli --config-file /path/to/config.yaml db upgrade
 | `db downgrade --revision <rev>` | Roll back to a specific revision |
 | `db stamp` | Mark an existing database at baseline revision `0001` without running DDL |
 | `db stamp --revision <rev>` | Mark the database at an explicit revision without running DDL |
+| `db sync-policies` | Reconcile the configured `access_logs` chunk and retention intervals |
 
 The `--config-file` option (or `GEORCHESTRA_ANALYTICS_CLI_CONFIG_FILE` env var) is required whenever the default config doesn't match your database connection.
 
