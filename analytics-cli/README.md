@@ -59,6 +59,11 @@ The `0001` core baseline contains the OGC aggregates deployed by the Helm chart.
 The optional Data API aggregates are intentionally excluded because they require
 Timescale Toolkit, which is not bundled in that TimescaleDB image.
 
+Revision `0002` creates persistent OGC stores and seeds them from the existing
+continuous aggregates. It deliberately leaves the continuous aggregates and their
+policies unchanged; application dual-write and query cutover are separate release
+steps.
+
 > **Note:** On a plain PostgreSQL instance (no TimescaleDB extension), the initial revision will fail at the `create_hypertable` call. Either use the TimescaleDB Docker image, or stamp at `0001` after manually creating the schema and run only subsequent revisions.
 
 ### Applying future migrations
