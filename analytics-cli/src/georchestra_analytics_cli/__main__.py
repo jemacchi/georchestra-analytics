@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from logging.config import dictConfig
 
 import click
+import sqlalchemy as sa
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
 from prometheus_client import (
@@ -323,6 +324,63 @@ def current():
 def stamp(revision):
     """Record a revision without running migrations (existing installs only)."""
     alembic_command.stamp(_get_alembic_config(), revision)
+
+
+@db.command("bootstrap-existing")
+@click.option(
+    "--revision",
+    default="0001",
+    show_default=True,
+    help="Baseline revision to record after validating an existing schema.",
+)
+def bootstrap_existing(revision):
+    """Safely baseline an existing, unversioned analytics database."""
+    engine = sa.create_engine(conf.get_db_connection_string())
+    required_relations = (
+        "analytics.opentelemetry_buffer",
+        "analytics.access_logs",
+        "analytics.ogc_summary_hourly",
+        "analytics.ogc_summary_daily",
+        "analytics.ogc_summary_monthly",
+        "analytics.ogc_summary",
+    )
+
+    try:
+        with engine.connect() as connection:
+            version_table = connection.scalar(
+                sa.text("SELECT to_regclass('analytics.alembic_version')")
+            )
+            if version_table is not None:
+                revisions = connection.execute(
+                    sa.text("SELECT version_num FROM analytics.alembic_version")
+                ).scalars().all()
+                if revisions:
+                    click.echo(
+                        "Database already versioned; baseline stamp skipped: "
+                        + ", ".join(revisions)
+                    )
+                    return
+
+            missing = [
+                relation
+                for relation in required_relations
+                if connection.scalar(
+                    sa.text("SELECT to_regclass(:relation)"),
+                    {"relation": relation},
+                )
+                is None
+            ]
+    finally:
+        engine.dispose()
+
+    if missing:
+        raise click.ClickException(
+            "Existing database does not match baseline 0001; missing relations: "
+            + ", ".join(missing)
+        )
+
+    alembic_command.stamp(_get_alembic_config(), revision)
+    click.echo(f"Existing database stamped at baseline revision {revision}")
 
 
 @db.command("sync-policies")

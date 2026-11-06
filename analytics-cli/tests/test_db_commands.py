@@ -1,4 +1,4 @@
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 from alembic.config import Config as AlembicConfig
 from click.testing import CliRunner
@@ -14,6 +14,9 @@ from georchestra_analytics_cli.timescaledb import PolicySyncResult
 class _Config:
     def get_logging_config_as_dict(self):
         return None
+
+    def get_db_connection_string(self):
+        return "postgresql://test"
 
 
 def _runner(monkeypatch):
@@ -76,6 +79,60 @@ def test_db_stamp_accepts_explicit_revision(monkeypatch):
 
     assert result.exit_code == 0, result.output
     stamp.assert_called_once_with(config, "base")
+
+
+def test_db_bootstrap_existing_skips_an_already_versioned_database(monkeypatch):
+    runner, _ = _runner(monkeypatch)
+    connection = Mock()
+    connection.scalar.return_value = "analytics.alembic_version"
+    connection.execute.return_value.scalars.return_value.all.return_value = ["0002"]
+    engine = MagicMock()
+    engine.connect.return_value.__enter__.return_value = connection
+    monkeypatch.setattr(main.sa, "create_engine", Mock(return_value=engine))
+    stamp = Mock()
+    monkeypatch.setattr(main.alembic_command, "stamp", stamp)
+
+    result = runner.invoke(main.cli, ["db", "bootstrap-existing"])
+
+    assert result.exit_code == 0, result.output
+    assert "baseline stamp skipped: 0002" in result.output
+    stamp.assert_not_called()
+    engine.dispose.assert_called_once()
+
+
+def test_db_bootstrap_existing_validates_and_stamps_unversioned_database(monkeypatch):
+    runner, config = _runner(monkeypatch)
+    connection = Mock()
+    connection.scalar.side_effect = [None] + [relation for relation in range(6)]
+    engine = MagicMock()
+    engine.connect.return_value.__enter__.return_value = connection
+    monkeypatch.setattr(main.sa, "create_engine", Mock(return_value=engine))
+    stamp = Mock()
+    monkeypatch.setattr(main.alembic_command, "stamp", stamp)
+
+    result = runner.invoke(
+        main.cli, ["db", "bootstrap-existing", "--revision", "0001"]
+    )
+
+    assert result.exit_code == 0, result.output
+    stamp.assert_called_once_with(config, "0001")
+
+
+def test_db_bootstrap_existing_refuses_an_incomplete_schema(monkeypatch):
+    runner, _ = _runner(monkeypatch)
+    connection = Mock()
+    connection.scalar.side_effect = [None, None, 1, 1, 1, 1, 1]
+    engine = MagicMock()
+    engine.connect.return_value.__enter__.return_value = connection
+    monkeypatch.setattr(main.sa, "create_engine", Mock(return_value=engine))
+    stamp = Mock()
+    monkeypatch.setattr(main.alembic_command, "stamp", stamp)
+
+    result = runner.invoke(main.cli, ["db", "bootstrap-existing"])
+
+    assert result.exit_code == 1
+    assert "missing relations: analytics.opentelemetry_buffer" in result.output
+    stamp.assert_not_called()
 
 
 def test_db_current(monkeypatch):

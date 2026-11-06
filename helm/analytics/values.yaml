@@ -129,6 +129,19 @@ vector:
 # Python CLI cronjob
 cli:
   enabled: true
+  # Run Alembic as a Helm post-install/post-upgrade hook before relying on the
+  # ingestion and aggregation CronJobs.
+  migrations:
+    enabled: true
+    targetRevision: "head"
+    backoffLimit: 6
+    activeDeadlineSeconds: 900
+    # Enable only when adopting Alembic on an existing installation. The CLI
+    # validates the 0001 relations and stamps only an unversioned database; it
+    # is a safe no-op after a revision has already been recorded.
+    existingDatabase:
+      enabled: false
+      baselineRevision: "0001"
   # Independently drains and cleans the durable OGC aggregation queue. buffer2db
   # also drains it after ingestion; this CronJob provides retries and processes
   # buckets queued by file2db or fake2db.

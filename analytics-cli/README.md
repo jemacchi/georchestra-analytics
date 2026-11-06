@@ -35,6 +35,14 @@ applied, without running any DDL:
 analytics-cli --config-file /path/to/config.yaml db stamp --revision 0001
 ```
 
+For automated deployments, prefer the idempotent baseline command. It checks
+that the expected baseline relations exist, stamps only an unversioned
+database, and skips databases that already have an Alembic revision:
+
+```bash
+analytics-cli --config-file /path/to/config.yaml db bootstrap-existing --revision 0001
+```
+
 Verify:
 ```bash
 analytics-cli --config-file /path/to/config.yaml db current

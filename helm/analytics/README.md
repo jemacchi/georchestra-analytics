@@ -2,6 +2,42 @@ _Work in progress_
 
 See https://docs.georchestra.org/analytics/technical_guides/installation/
 
+## Database migrations
+
+The chart runs an Alembic migration Job after every Helm install and upgrade.
+The Job upgrades the schema to `head` and then synchronizes the configured
+TimescaleDB policies. It is retried while the database becomes available.
+
+New installations require no additional settings:
+
+```yaml
+cli:
+  migrations:
+    enabled: true
+    targetRevision: head
+```
+
+When upgrading an existing, pre-Alembic installation, opt in to the baseline
+step for the first deployment:
+
+```yaml
+cli:
+  migrations:
+    existingDatabase:
+      enabled: true
+      baselineRevision: "0001"
+```
+
+`bootstrap-existing` refuses to stamp the database if any expected `0001`
+relation is missing. If the database already has an Alembic revision, the
+baseline step is skipped, so leaving the option enabled cannot move the
+recorded revision backwards. Disable the option again after adoption to keep
+the deployment intent clear.
+
+The Job is a `post-install,post-upgrade` Helm hook because the chart may also
+deploy its own TimescaleDB instance. Helm waits for the hook to complete and
+marks the release failed if migrations cannot be applied.
+
 ## Incremental OGC aggregation
 
 The chart creates a separate recovery CronJob for the persistent OGC aggregation
