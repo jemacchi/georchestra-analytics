@@ -4,6 +4,10 @@ from alembic.config import Config as AlembicConfig
 from click.testing import CliRunner
 
 from georchestra_analytics_cli import __main__ as main
+from georchestra_analytics_cli.legacy_ogc import (
+    GrainValidation,
+    LegacyValidation,
+)
 from georchestra_analytics_cli.timescaledb import PolicySyncResult
 
 
@@ -123,3 +127,60 @@ def test_aggregate_ogc_drains_queue(monkeypatch):
     drain.assert_called_once_with(batch_size=2)
     assert "processed_buckets=4" in result.output
 
+
+def test_legacy_ogc_validate(monkeypatch):
+    runner, _ = _runner(monkeypatch)
+    validation = LegacyValidation(
+        queue_size=0,
+        grains=(
+            GrainValidation("hourly", 2, 3, 4, 5, 0, 1),
+            GrainValidation("daily", 1, 1, 4, 4, 0, 0),
+            GrainValidation("monthly", 1, 1, 4, 4, 0, 0),
+        ),
+    )
+    validate = Mock(return_value=validation)
+    monkeypatch.setattr(main, "validate_legacy_ogc", validate)
+
+    result = runner.invoke(main.cli, ["legacy-ogc", "validate"])
+
+    assert result.exit_code == 0, result.output
+    validate.assert_called_once_with(main.conf)
+    assert "store_only_or_different=1" in result.output
+
+
+def test_legacy_ogc_validate_fails_when_queue_is_not_empty(monkeypatch):
+    runner, _ = _runner(monkeypatch)
+    validation = LegacyValidation(queue_size=1, grains=())
+    monkeypatch.setattr(main, "validate_legacy_ogc", Mock(return_value=validation))
+
+    result = runner.invoke(main.cli, ["legacy-ogc", "validate"])
+
+    assert result.exit_code == 1
+    assert "not safe for cutover" in result.output
+
+
+def test_legacy_ogc_lifecycle_commands(monkeypatch):
+    runner, _ = _runner(monkeypatch)
+    disable = Mock(return_value=5)
+    enable = Mock(return_value=5)
+    drop = Mock(return_value=3)
+    monkeypatch.setattr(main, "disable_legacy_ogc", disable)
+    monkeypatch.setattr(main, "enable_legacy_ogc", enable)
+    monkeypatch.setattr(main, "drop_legacy_ogc", drop)
+
+    disabled = runner.invoke(main.cli, ["legacy-ogc", "disable"])
+    enabled = runner.invoke(main.cli, ["legacy-ogc", "enable"])
+    dropped = runner.invoke(
+        main.cli,
+        [
+            "legacy-ogc",
+            "drop",
+            "--confirm",
+            "DROP_LEGACY_OGC_AGGREGATES",
+        ],
+    )
+
+    assert disabled.exit_code == enabled.exit_code == dropped.exit_code == 0
+    disable.assert_called_once_with(main.conf)
+    enable.assert_called_once_with(main.conf)
+    drop.assert_called_once_with(main.conf, "DROP_LEGACY_OGC_AGGREGATES")

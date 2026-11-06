@@ -59,6 +59,16 @@ The CLI relies on sub-commands:
 
     `analytics-cli --config-file /path/to/your/custom/config/file.yaml aggregate-ogc`
 
+`legacy-ogc`
+
+:   Validates the dual-run result and manages the legacy OGC continuous aggregates
+    after revision `0003`. The `disable` operation pauses their TimescaleDB jobs but
+    preserves data; `enable` restores jobs paused by the CLI. The separate `drop`
+    operation permanently removes only those legacy aggregates after validation and
+    explicit confirmation.
+
+    `analytics-cli --config-file /path/to/your/custom/config/file.yaml legacy-ogc --help`
+
 `file2db`
 
 :   Process file-based log records. For now, it only supports text logs (not json), for instance CLF-like logs.  

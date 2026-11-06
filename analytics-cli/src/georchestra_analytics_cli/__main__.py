@@ -19,6 +19,13 @@ import georchestra_analytics_cli
 from georchestra_analytics_cli import __version__, dist_name
 from georchestra_analytics_cli.access_logs.AccessLogProcessor import AccessLogProcessor
 from georchestra_analytics_cli.config import Config, load_config_from
+from georchestra_analytics_cli.legacy_ogc import (
+    DROP_CONFIRMATION,
+    disable_legacy_ogc,
+    drop_legacy_ogc,
+    enable_legacy_ogc,
+    validate_legacy_ogc,
+)
 from georchestra_analytics_cli.ogc_aggregation import aggregate_queued_ogc_buckets
 from georchestra_analytics_cli.timescaledb import sync_timescaledb_policies
 from georchestra_analytics_cli.utils import (
@@ -222,6 +229,59 @@ def aggregate_ogc(batch_size: int | None):
     """Drain the durable OGC aggregation queue."""
     processed = _drain_ogc_queue(batch_size=batch_size)
     click.echo(f"OGC aggregation complete: processed_buckets={processed}")
+
+
+@cli.group("legacy-ogc")
+def legacy_ogc():
+    """Validate, pause, restore or remove legacy OGC aggregates."""
+    pass
+
+
+@legacy_ogc.command("validate")
+def validate_legacy():
+    """Compare legacy aggregates with persistent stores."""
+    result = validate_legacy_ogc(conf)
+    click.echo(f"queue_size={result.queue_size}")
+    for grain in result.grains:
+        click.echo(
+            f"{grain.grain}: source_rows={grain.source_rows}, "
+            f"store_rows={grain.store_rows}, "
+            f"source_requests={grain.source_requests}, "
+            f"store_requests={grain.store_requests}, "
+            f"source_missing_or_different={grain.source_missing_or_different}, "
+            f"store_only_or_different={grain.store_only_or_different}"
+        )
+    if not result.safe:
+        raise click.ClickException("legacy OGC validation is not safe for cutover")
+
+
+@legacy_ogc.command("disable")
+def disable_legacy():
+    """Pause legacy TimescaleDB OGC jobs without deleting data."""
+    changed = disable_legacy_ogc(conf)
+    click.echo(f"Legacy OGC jobs disabled: changed={changed}")
+
+
+@legacy_ogc.command("enable")
+def enable_legacy():
+    """Restore legacy jobs previously paused by this CLI."""
+    changed = enable_legacy_ogc(conf)
+    click.echo(f"Legacy OGC jobs enabled: changed={changed}")
+
+
+@legacy_ogc.command("drop")
+@click.option(
+    "--confirm",
+    required=True,
+    help=f"Required destructive confirmation: {DROP_CONFIRMATION}",
+)
+def drop_legacy(confirm: str):
+    """Permanently remove disabled legacy OGC continuous aggregates."""
+    try:
+        dropped = drop_legacy_ogc(conf, confirm)
+    except (RuntimeError, ValueError) as error:
+        raise click.ClickException(str(error)) from error
+    click.echo(f"Legacy OGC continuous aggregates removed: dropped={dropped}")
 
 
 def _get_alembic_config() -> AlembicConfig:

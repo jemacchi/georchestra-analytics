@@ -87,6 +87,39 @@ performance:
   ogc_aggregation_batch_size: 100
 ```
 
+Revision `0003` performs the query cutover. It renames the three TimescaleDB
+continuous aggregates with a `_legacy` suffix and creates ordinary compatibility
+views with the established `ogc_summary*` names, backed by the persistent stores.
+Superset and other clients therefore keep the same interface.
+
+Before cutover, compare both implementations and drain the queue:
+
+```bash
+analytics-cli --config-file /path/to/config.yaml aggregate-ogc
+analytics-cli --config-file /path/to/config.yaml legacy-ogc validate
+analytics-cli --config-file /path/to/config.yaml db upgrade --revision 0003
+```
+
+After cutover, the legacy jobs can be paused without deleting data and restored if
+rollback is needed:
+
+```bash
+./scripts/disable-legacy-timescaledb.sh /path/to/config.yaml
+./scripts/enable-legacy-timescaledb.sh /path/to/config.yaml
+```
+
+Permanent removal is deliberately separate and requires an exact confirmation:
+
+```bash
+./scripts/drop-legacy-timescaledb.sh \
+  /path/to/config.yaml DROP_LEGACY_OGC_AGGREGATES
+```
+
+That command removes only the three legacy OGC continuous aggregates and their
+attached policies/jobs. It does not remove the TimescaleDB extension or the
+`access_logs` hypertable. Removing them is irreversible: downgrade from `0003` to
+`0002` is intentionally refused afterward.
+
 > **Note:** On a plain PostgreSQL instance (no TimescaleDB extension), the initial revision will fail at the `create_hypertable` call. Either use the TimescaleDB Docker image, or stamp at `0001` after manually creating the schema and run only subsequent revisions.
 
 ### Applying future migrations
