@@ -129,6 +129,16 @@ vector:
 # Python CLI cronjob
 cli:
   enabled: true
+  # Independently drains and cleans the durable OGC aggregation queue. buffer2db
+  # also drains it after ingestion; this CronJob provides retries and processes
+  # buckets queued by file2db or fake2db.
+  aggregation:
+    enabled: true
+    schedule: "15 * * * *"
+    batchSize: 100
+    backoffLimit: 2
+    successfulJobsHistoryLimit: 1
+    failedJobsHistoryLimit: 3
   fakeRecords:
     # Enable this if you want to generate fake log records, instead of processing real ones.
     # Useful for dashboard development.

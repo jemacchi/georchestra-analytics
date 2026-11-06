@@ -49,6 +49,16 @@ The CLI relies on sub-commands:
     being collected by Vector and stored in the timescaledb database, this is what you will want to run:  
     `analytics-cli --config-file /path/to/your/custom/config/file.yaml buffer2db`
 
+`aggregate-ogc`
+
+:   Recomputes persistent hourly, daily and monthly OGC statistics for all buckets
+    in the durable aggregation queue. Processing is transactional and idempotent;
+    successfully processed queue entries are removed. The Helm chart schedules this
+    command independently so pending work can be retried even when no new buffer
+    records arrive.
+
+    `analytics-cli --config-file /path/to/your/custom/config/file.yaml aggregate-ogc`
+
 `file2db`
 
 :   Process file-based log records. For now, it only supports text logs (not json), for instance CLF-like logs.  
